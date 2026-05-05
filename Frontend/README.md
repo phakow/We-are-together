@@ -23,5 +23,5 @@ npm run dev
 Set `VITE_API_BASE_URL` to your backend API root, for example:
 
 ```bash
-VITE_API_BASE_URL=http://localhost:5000/api
+VITE_API_BASE_URL=https://we-are-together-backend.onrender.com
 ```
