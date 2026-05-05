@@ -1,11 +1,12 @@
 {
   "name": "re-mmogo-backend",
   "version": "1.0.0",
-  "description": "Backend for Motshelo Group Management System",
-  "main": "server.js",
   "engines": {
     "node": "20.x"
   },
+  "description": "Backend for Motshelo Group Management System",
+  "main": "server.js",
+ 
 
 "scripts": {
   "start": "node server.js",
