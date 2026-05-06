@@ -167,10 +167,8 @@ class MemberPage extends Component {
 
             {!isSignatory && (
               <div style={styles.warningBox}>
-                ⚠️ Only group <strong>signatories</strong> can enroll members. Ask your group admin to grant you signatory access via the Neon SQL Editor:<br />
-                <code style={{ display: "block", marginTop: "6px", fontSize: "0.8rem" }}>
-                  UPDATE users SET is_signatory = true WHERE email = 'your@email.com';
-                </code>
+                ⚠️ Only group <strong>signatories</strong> can enroll members. Ask your group admin to grant you signatory access:<br />
+              
               </div>
             )}
 
