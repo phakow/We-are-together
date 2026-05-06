@@ -5,7 +5,6 @@ const groupController = require('../controllers/groupController');
 const { authenticateToken, requireAdmin, requireGroupAccess } = require('../middleware/auth');
 const { body } = require('express-validator');
 
-// Validation rules
 const createGroupValidation = [
   body('name').notEmpty().trim().withMessage('Group name is required'),
   body('registration_number').optional().trim(),
@@ -23,7 +22,10 @@ const updateGroupValidation = [
   body('target_interest').optional().isFloat({ min: 0 })
 ];
 
-// Routes
+// GET /api/groups/all — all groups visible to any authenticated user (for dropdown in member enrollment)
+router.get('/all', authenticateToken, groupController.getAllGroups);
+
+// Standard routes
 router.post('/', authenticateToken, createGroupValidation, groupController.createGroup);
 router.get('/', authenticateToken, groupController.getUserGroups);
 router.get('/:groupId', authenticateToken, requireGroupAccess, groupController.getGroupById);

@@ -17,12 +17,18 @@ exports.createGroup = async (req, res) => {
     );
     const groupId = result.rows[0].id;
 
+    // Auto-add the creator as first member and make them signatory
+    const memberNum = `MEM${String(groupId).padStart(3,'0')}001`;
     await pool.query(
-      `INSERT INTO group_members (group_id, user_id, member_number, status) VALUES ($1,$2,$3,$4)`,
-      [groupId, req.user.id, `MEM${groupId}001`, 'active']
+      `INSERT INTO group_members (group_id, user_id, member_number, status) VALUES ($1,$2,$3,$4)
+       ON CONFLICT (group_id, user_id) DO NOTHING`,
+      [groupId, req.user.id, memberNum, 'active']
     );
 
-    await pool.query('UPDATE users SET group_id = $1 WHERE id = $2', [groupId, req.user.id]);
+    await pool.query(
+      'UPDATE users SET group_id = $1, is_signatory = true, role = $2 WHERE id = $3',
+      [groupId, 'admin', req.user.id]
+    );
 
     const group = await pool.query('SELECT * FROM groups WHERE id = $1', [groupId]);
     res.status(201).json({ message: 'Group created successfully', group: group.rows[0] });
@@ -32,18 +38,45 @@ exports.createGroup = async (req, res) => {
   }
 };
 
+// Returns all groups (for member enrollment dropdown - any authenticated user can see group list)
+exports.getAllGroups = async (req, res) => {
+  try {
+    const pool = getDb();
+    const result = await pool.query(
+      `SELECT g.*, COUNT(gm.id) as member_count
+       FROM groups g
+       LEFT JOIN group_members gm ON g.id = gm.group_id AND gm.status = 'active'
+       GROUP BY g.id
+       ORDER BY g.created_at DESC`
+    );
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Get all groups error:', error);
+    res.status(500).json({ error: 'Error fetching groups' });
+  }
+};
+
 exports.getUserGroups = async (req, res) => {
   try {
     const pool = getDb();
     let result;
 
     if (req.user.role === 'admin') {
-      result = await pool.query('SELECT * FROM groups ORDER BY created_at DESC');
+      result = await pool.query(
+        `SELECT g.*, COUNT(gm.id) as member_count
+         FROM groups g
+         LEFT JOIN group_members gm ON g.id = gm.group_id AND gm.status = 'active'
+         GROUP BY g.id
+         ORDER BY g.created_at DESC`
+      );
     } else {
       result = await pool.query(
-        `SELECT g.* FROM groups g
-         INNER JOIN group_members gm ON g.id = gm.group_id
-         WHERE gm.user_id = $1 ORDER BY g.created_at DESC`,
+        `SELECT g.*, COUNT(gm2.id) as member_count
+         FROM groups g
+         INNER JOIN group_members gm ON g.id = gm.group_id AND gm.user_id = $1
+         LEFT JOIN group_members gm2 ON g.id = gm2.group_id AND gm2.status = 'active'
+         GROUP BY g.id
+         ORDER BY g.created_at DESC`,
         [req.user.id]
       );
     }
@@ -119,7 +152,7 @@ exports.getGroupMembers = async (req, res) => {
               gm.total_contributions, gm.total_interest_earned
        FROM users u
        INNER JOIN group_members gm ON u.id = gm.user_id
-       WHERE gm.group_id = $1 ORDER BY gm.join_date DESC`,
+       WHERE gm.group_id = $1 ORDER BY gm.join_date ASC`,
       [req.params.groupId]
     );
     res.json(result.rows);
