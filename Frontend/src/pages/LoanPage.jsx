@@ -1,10 +1,13 @@
 import React, { Component } from "react";
 import FormMessage from "../components/common/FormMessage";
+import { AuthContext } from "../context/AuthContext";
 import loanService from "../services/loanService";
 import memberService from "../services/memberService";
 import { hasErrors, validateMinNumber, validateRequired } from "../utils/validators";
 
 class LoanPage extends Component {
+  static contextType = AuthContext;
+
   state = {
     members: [],
     loans: [],
@@ -12,9 +15,7 @@ class LoanPage extends Component {
       memberId: "",
       amount: "",
       reason: "",
-      requestedDate: "",
-      signatoryOneApproved: false,
-      signatoryTwoApproved: false
+      requestedDate: ""
     },
     errors: {},
     loading: true,
@@ -26,9 +27,15 @@ class LoanPage extends Component {
     await Promise.all([this.loadMembers(), this.loadLoans()]);
   }
 
+  getGroupId() {
+    return this.context.user?.group_id;
+  }
+
   loadMembers = async () => {
+    const groupId = this.getGroupId();
+    if (!groupId) return;
     try {
-      const members = await memberService.getMembers();
+      const members = await memberService.getMembers(groupId);
       this.setState((current) => ({
         members: members || [],
         form: {
@@ -42,8 +49,13 @@ class LoanPage extends Component {
   };
 
   loadLoans = async () => {
+    const groupId = this.getGroupId();
+    if (!groupId) {
+      this.setState({ loading: false });
+      return;
+    }
     try {
-      const loans = await loanService.getLoans();
+      const loans = await loanService.getLoans(groupId);
       this.setState({ loans: loans || [], loading: false });
     } catch (error) {
       this.setState({ loading: false, formError: "Loan data is waiting for backend connection." });
@@ -51,12 +63,9 @@ class LoanPage extends Component {
   };
 
   handleChange = (event) => {
-    const { name, value, type, checked } = event.target;
+    const { name, value } = event.target;
     this.setState((current) => ({
-      form: {
-        ...current.form,
-        [name]: type === "checkbox" ? checked : value
-      }
+      form: { ...current.form, [name]: value }
     }));
   };
 
@@ -64,30 +73,24 @@ class LoanPage extends Component {
     event.preventDefault();
     const errors = validateRequired(["memberId", "amount", "reason", "requestedDate"], this.state.form);
     const amountError = validateMinNumber(this.state.form.amount, 1);
-
-    if (amountError) {
-      errors.amount = amountError;
-    }
+    if (amountError) errors.amount = amountError;
 
     if (hasErrors(errors)) {
       this.setState({ errors, formError: "", success: "" });
       return;
     }
 
+    const groupId = this.getGroupId();
     try {
-      await loanService.createLoan(this.state.form);
+      await loanService.applyForLoan(groupId, {
+        principal_amount: this.state.form.amount,
+        notes: this.state.form.reason
+      });
       this.setState({
-        form: {
-          ...this.state.form,
-          amount: "",
-          reason: "",
-          requestedDate: "",
-          signatoryOneApproved: false,
-          signatoryTwoApproved: false
-        },
+        form: { ...this.state.form, amount: "", reason: "", requestedDate: "" },
         errors: {},
         formError: "",
-        success: "Loan request submitted. Backend approval can enforce the two-signatory rule."
+        success: "Loan request submitted. Awaiting signatory approval."
       });
       this.loadLoans();
     } catch (error) {
@@ -101,19 +104,17 @@ class LoanPage extends Component {
     return (
       <section>
         <h2>Loans</h2>
-        <p>Record loans for members and keep approval fields ready for signatory workflows.</p>
+        <p>Apply for a loan and track approval status.</p>
 
         <div className="two-column">
           <div>
-            <h3>Create Loan</h3>
+            <h3>Apply for Loan</h3>
             <form onSubmit={this.handleSubmit} noValidate>
               <label htmlFor="memberId">Member</label>
               <select id="memberId" name="memberId" value={form.memberId} onChange={this.handleChange}>
                 <option value="">Select a member</option>
                 {members.map((member) => (
-                  <option key={member.id} value={member.id}>
-                    {member.fullName}
-                  </option>
+                  <option key={member.id} value={member.id}>{member.full_name}</option>
                 ))}
               </select>
               {errors.memberId && <small>{errors.memberId}</small>}
@@ -130,31 +131,8 @@ class LoanPage extends Component {
               <input id="requestedDate" name="requestedDate" type="date" value={form.requestedDate} onChange={this.handleChange} />
               {errors.requestedDate && <small>{errors.requestedDate}</small>}
 
-              <fieldset>
-                <legend>Approval Snapshot</legend>
-                <label>
-                  <input
-                    type="checkbox"
-                    name="signatoryOneApproved"
-                    checked={form.signatoryOneApproved}
-                    onChange={this.handleChange}
-                  />
-                  First signatory approved
-                </label>
-                <label>
-                  <input
-                    type="checkbox"
-                    name="signatoryTwoApproved"
-                    checked={form.signatoryTwoApproved}
-                    onChange={this.handleChange}
-                  />
-                  Second signatory approved
-                </label>
-              </fieldset>
-
-              <button type="submit">Save Loan</button>
+              <button type="submit">Submit Loan Application</button>
             </form>
-
             <FormMessage error={formError} success={success} />
           </div>
 
@@ -165,22 +143,16 @@ class LoanPage extends Component {
             ) : (
               <table>
                 <thead>
-                  <tr>
-                    <th>Member</th>
-                    <th>Amount</th>
-                    <th>Status</th>
-                  </tr>
+                  <tr><th>Member</th><th>Amount</th><th>Status</th></tr>
                 </thead>
                 <tbody>
                   {loans.length === 0 ? (
-                    <tr>
-                      <td colSpan="3">No loans found.</td>
-                    </tr>
+                    <tr><td colSpan="3">No loans found.</td></tr>
                   ) : (
                     loans.map((loan) => (
                       <tr key={loan.id}>
-                        <td>{loan.memberName}</td>
-                        <td>{loan.amount}</td>
+                        <td>{loan.member_name}</td>
+                        <td>{loan.principal_amount}</td>
                         <td>{loan.status || "Pending"}</td>
                       </tr>
                     ))

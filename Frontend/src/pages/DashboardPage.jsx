@@ -1,10 +1,13 @@
 import React, { Component } from "react";
+import { AuthContext } from "../context/AuthContext";
 import contributionService from "../services/contributionService";
 import groupService from "../services/groupService";
 import loanService from "../services/loanService";
 import memberService from "../services/memberService";
 
 class DashboardPage extends Component {
+  static contextType = AuthContext;
+
   state = {
     summary: {
       groups: 0,
@@ -16,12 +19,15 @@ class DashboardPage extends Component {
   };
 
   async componentDidMount() {
+    const { user } = this.context;
+    const groupId = user?.group_id;
+
     try {
       const [groups, members, contributions, loans] = await Promise.all([
         groupService.getGroups(),
-        memberService.getMembers(),
-        contributionService.getContributions(),
-        loanService.getLoans()
+        groupId ? memberService.getMembers(groupId) : Promise.resolve([]),
+        groupId ? contributionService.getContributions(groupId) : Promise.resolve([]),
+        groupId ? loanService.getLoans(groupId) : Promise.resolve([])
       ]);
 
       this.setState({

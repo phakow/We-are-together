@@ -1,10 +1,13 @@
 import React, { Component } from "react";
 import FormMessage from "../components/common/FormMessage";
+import { AuthContext } from "../context/AuthContext";
 import groupService from "../services/groupService";
 import memberService from "../services/memberService";
 import { hasErrors, validateEmail, validateRequired } from "../utils/validators";
 
 class MemberPage extends Component {
+  static contextType = AuthContext;
+
   state = {
     groups: [],
     members: [],
@@ -24,14 +27,20 @@ class MemberPage extends Component {
     await Promise.all([this.loadGroups(), this.loadMembers()]);
   }
 
+  getGroupId() {
+    const { user } = this.context;
+    return this.state.form.groupId || user?.group_id;
+  }
+
   loadGroups = async () => {
     try {
       const groups = await groupService.getGroups();
+      const { user } = this.context;
       this.setState((current) => ({
         groups: groups || [],
         form: {
           ...current.form,
-          groupId: current.form.groupId || groups?.[0]?.id || ""
+          groupId: current.form.groupId || user?.group_id || groups?.[0]?.id || ""
         }
       }));
     } catch (error) {
@@ -40,8 +49,14 @@ class MemberPage extends Component {
   };
 
   loadMembers = async () => {
+    const { user } = this.context;
+    const groupId = user?.group_id;
+    if (!groupId) {
+      this.setState({ loading: false });
+      return;
+    }
     try {
-      const members = await memberService.getMembers();
+      const members = await memberService.getMembers(groupId);
       this.setState({ members: members || [], loading: false });
     } catch (error) {
       this.setState({ loading: false, formError: "Unable to load members yet." });
@@ -51,10 +66,7 @@ class MemberPage extends Component {
   handleChange = (event) => {
     const { name, value } = event.target;
     this.setState((current) => ({
-      form: {
-        ...current.form,
-        [name]: value
-      }
+      form: { ...current.form, [name]: value }
     }));
   };
 
@@ -62,10 +74,7 @@ class MemberPage extends Component {
     event.preventDefault();
     const errors = validateRequired(["fullName", "email", "groupId"], this.state.form);
     const emailError = validateEmail(this.state.form.email);
-
-    if (emailError) {
-      errors.email = emailError;
-    }
+    if (emailError) errors.email = emailError;
 
     if (hasErrors(errors)) {
       this.setState({ errors, formError: "", success: "" });
@@ -73,14 +82,14 @@ class MemberPage extends Component {
     }
 
     try {
-      await memberService.createMember(this.state.form);
+      const groupId = this.state.form.groupId;
+      await memberService.createMember(groupId, {
+        full_name: this.state.form.fullName,
+        email: this.state.form.email,
+        phone_number: this.state.form.phoneNumber
+      });
       this.setState({
-        form: {
-          fullName: "",
-          email: "",
-          phoneNumber: "",
-          groupId: this.state.form.groupId
-        },
+        form: { fullName: "", email: "", phoneNumber: "", groupId: this.state.form.groupId },
         errors: {},
         formError: "",
         success: "Member enrolled successfully."
@@ -118,16 +127,13 @@ class MemberPage extends Component {
               <select id="groupId" name="groupId" value={form.groupId} onChange={this.handleChange}>
                 <option value="">Select a group</option>
                 {groups.map((group) => (
-                  <option key={group.id} value={group.id}>
-                    {group.name}
-                  </option>
+                  <option key={group.id} value={group.id}>{group.name}</option>
                 ))}
               </select>
               {errors.groupId && <small>{errors.groupId}</small>}
 
               <button type="submit">Add Member</button>
             </form>
-
             <FormMessage error={formError} success={success} />
           </div>
 
@@ -138,23 +144,17 @@ class MemberPage extends Component {
             ) : (
               <table>
                 <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Email</th>
-                    <th>Group</th>
-                  </tr>
+                  <tr><th>Name</th><th>Email</th><th>Group</th></tr>
                 </thead>
                 <tbody>
                   {members.length === 0 ? (
-                    <tr>
-                      <td colSpan="3">No members found.</td>
-                    </tr>
+                    <tr><td colSpan="3">No members found.</td></tr>
                   ) : (
                     members.map((member) => (
                       <tr key={member.id}>
-                        <td>{member.fullName}</td>
+                        <td>{member.full_name}</td>
                         <td>{member.email}</td>
-                        <td>{member.groupName || member.group?.name || member.groupId}</td>
+                        <td>{member.group_name || member.group_id}</td>
                       </tr>
                     ))
                   )}

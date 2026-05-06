@@ -1,14 +1,16 @@
 import React, { Component } from "react";
 import FormMessage from "../components/common/FormMessage";
+import { AuthContext } from "../context/AuthContext";
 import contributionService from "../services/contributionService";
 import memberService from "../services/memberService";
 import { hasErrors, validateMinNumber, validateRequired } from "../utils/validators";
 
 class ContributionPage extends Component {
+  static contextType = AuthContext;
+
   state = {
     members: [],
     contributions: [],
-    balances: [],
     form: {
       memberId: "",
       amount: "1000",
@@ -26,9 +28,15 @@ class ContributionPage extends Component {
     await Promise.all([this.loadMembers(), this.loadContributionData()]);
   }
 
+  getGroupId() {
+    return this.context.user?.group_id;
+  }
+
   loadMembers = async () => {
+    const groupId = this.getGroupId();
+    if (!groupId) return;
     try {
-      const members = await memberService.getMembers();
+      const members = await memberService.getMembers(groupId);
       this.setState((current) => ({
         members: members || [],
         form: {
@@ -42,16 +50,14 @@ class ContributionPage extends Component {
   };
 
   loadContributionData = async () => {
+    const groupId = this.getGroupId();
+    if (!groupId) {
+      this.setState({ loading: false });
+      return;
+    }
     try {
-      const [contributions, balances] = await Promise.all([
-        contributionService.getContributions(),
-        contributionService.getBalances()
-      ]);
-      this.setState({
-        contributions: contributions || [],
-        balances: balances || [],
-        loading: false
-      });
+      const contributions = await contributionService.getContributions(groupId);
+      this.setState({ contributions: contributions || [], loading: false });
     } catch (error) {
       this.setState({ loading: false, formError: "Contribution data is waiting for backend connection." });
     }
@@ -60,10 +66,7 @@ class ContributionPage extends Component {
   handleChange = (event) => {
     const { name, value } = event.target;
     this.setState((current) => ({
-      form: {
-        ...current.form,
-        [name]: value
-      }
+      form: { ...current.form, [name]: value }
     }));
   };
 
@@ -71,29 +74,27 @@ class ContributionPage extends Component {
     event.preventDefault();
     const errors = validateRequired(["memberId", "amount", "paymentMonth", "paymentDate"], this.state.form);
     const amountError = validateMinNumber(this.state.form.amount, 1);
-
-    if (amountError) {
-      errors.amount = amountError;
-    }
+    if (amountError) errors.amount = amountError;
 
     if (hasErrors(errors)) {
       this.setState({ errors, formError: "", success: "" });
       return;
     }
 
+    const groupId = this.getGroupId();
     try {
-      await contributionService.createContribution(this.state.form);
+      await contributionService.createContribution(groupId, {
+        amount: this.state.form.amount,
+        payment_date: this.state.form.paymentDate,
+        month: new Date(this.state.form.paymentMonth).getMonth() + 1,
+        year: new Date(this.state.form.paymentMonth).getFullYear(),
+        proof_of_payment: this.state.form.proofOfPaymentUrl
+      });
       this.setState({
-        form: {
-          ...this.state.form,
-          amount: "1000",
-          paymentMonth: "",
-          paymentDate: "",
-          proofOfPaymentUrl: ""
-        },
+        form: { ...this.state.form, amount: "1000", paymentMonth: "", paymentDate: "", proofOfPaymentUrl: "" },
         errors: {},
         formError: "",
-        success: "Contribution submitted. It can be marked approved by signatories on the backend."
+        success: "Contribution submitted. It can be marked approved by signatories."
       });
       this.loadContributionData();
     } catch (error) {
@@ -102,7 +103,7 @@ class ContributionPage extends Component {
   };
 
   render() {
-    const { members, contributions, balances, form, errors, loading, formError, success } = this.state;
+    const { members, contributions, form, errors, loading, formError, success } = this.state;
 
     return (
       <section>
@@ -117,9 +118,7 @@ class ContributionPage extends Component {
               <select id="memberId" name="memberId" value={form.memberId} onChange={this.handleChange}>
                 <option value="">Select a member</option>
                 {members.map((member) => (
-                  <option key={member.id} value={member.id}>
-                    {member.fullName}
-                  </option>
+                  <option key={member.id} value={member.id}>{member.full_name}</option>
                 ))}
               </select>
               {errors.memberId && <small>{errors.memberId}</small>}
@@ -137,62 +136,30 @@ class ContributionPage extends Component {
               {errors.paymentDate && <small>{errors.paymentDate}</small>}
 
               <label htmlFor="proofOfPaymentUrl">Proof of Payment URL</label>
-              <input
-                id="proofOfPaymentUrl"
-                name="proofOfPaymentUrl"
-                value={form.proofOfPaymentUrl}
-                onChange={this.handleChange}
-              />
+              <input id="proofOfPaymentUrl" name="proofOfPaymentUrl" value={form.proofOfPaymentUrl} onChange={this.handleChange} />
 
               <button type="submit">Submit Contribution</button>
             </form>
-
             <FormMessage error={formError} success={success} />
           </div>
 
           <div>
-            <h3>Balances</h3>
-            {loading ? (
-              <p>Loading balances...</p>
-            ) : (
-              <table>
-                <thead>
-                  <tr>
-                    <th>Member</th>
-                    <th>Total Paid</th>
-                    <th>Balance</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {balances.length === 0 ? (
-                    <tr>
-                      <td colSpan="3">No balances found.</td>
-                    </tr>
-                  ) : (
-                    balances.map((balance) => (
-                      <tr key={balance.memberId}>
-                        <td>{balance.memberName}</td>
-                        <td>{balance.totalPaid}</td>
-                        <td>{balance.balance}</td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            )}
-
             <h3>Recent Contributions</h3>
-            <ul>
-              {contributions.length === 0 ? (
-                <li>No contributions recorded.</li>
-              ) : (
-                contributions.slice(0, 5).map((item) => (
-                  <li key={item.id}>
-                    {item.memberName} paid {item.amount} for {item.paymentMonth}
-                  </li>
-                ))
-              )}
-            </ul>
+            {loading ? (
+              <p>Loading contributions...</p>
+            ) : (
+              <ul>
+                {contributions.length === 0 ? (
+                  <li>No contributions recorded.</li>
+                ) : (
+                  contributions.slice(0, 5).map((item) => (
+                    <li key={item.id}>
+                      {item.member_name} paid {item.amount} — {item.month}/{item.year} ({item.status})
+                    </li>
+                  ))
+                )}
+              </ul>
+            )}
           </div>
         </div>
       </section>

@@ -1,9 +1,12 @@
 import React, { Component } from "react";
 import FormMessage from "../components/common/FormMessage";
+import { AuthContext } from "../context/AuthContext";
 import groupService from "../services/groupService";
 import reportService from "../services/reportService";
 
 class ReportsPage extends Component {
+  static contextType = AuthContext;
+
   state = {
     groups: [],
     selectedGroupId: "",
@@ -13,11 +16,12 @@ class ReportsPage extends Component {
   };
 
   async componentDidMount() {
+    const { user } = this.context;
     try {
       const groups = await groupService.getGroups();
       this.setState({
         groups: groups || [],
-        selectedGroupId: groups?.[0]?.id || "",
+        selectedGroupId: user?.group_id || groups?.[0]?.id || "",
         loading: false
       });
     } catch (error) {
@@ -31,12 +35,10 @@ class ReportsPage extends Component {
 
   handleSubmit = async (event) => {
     event.preventDefault();
-
     if (!this.state.selectedGroupId) {
       this.setState({ error: "Select a group to generate a report." });
       return;
     }
-
     try {
       const report = await reportService.getYearEndReport(this.state.selectedGroupId);
       this.setState({ report, error: "" });
@@ -50,23 +52,33 @@ class ReportsPage extends Component {
 
   renderReport() {
     const { report } = this.state;
-
     if (!report) {
-      return (
-        <p>
-          Generate a year-end report to see totals, interest summaries, and who
-          earned the most or least interest.
-        </p>
-      );
+      return <p>Generate a year-end report to see totals, interest summaries, and member performance.</p>;
     }
 
     return (
       <div className="report-block">
-        <p>Total Savings: {report.totalSavings}</p>
-        <p>Total Loans: {report.totalLoans}</p>
-        <p>Highest Interest Member: {report.highestInterestMember}</p>
-        <p>Lowest Interest Member: {report.lowestInterestMember}</p>
-        <p>Projected Payouts: {report.projectedPayouts}</p>
+        <p>Total Members: {report.total_members}</p>
+        <p>Total Contributions: {report.total_contributions}</p>
+        <p>Total Interest Earned: {report.total_interest_earned}</p>
+        <p>Members Meeting Target: {report.members_meeting_target}</p>
+        {report.members && (
+          <table>
+            <thead>
+              <tr><th>Member</th><th>Contributions</th><th>Interest</th><th>Payout</th></tr>
+            </thead>
+            <tbody>
+              {report.members.map((m) => (
+                <tr key={m.member_id}>
+                  <td>{m.full_name}</td>
+                  <td>{m.total_contributions}</td>
+                  <td>{m.total_interest_earned}</td>
+                  <td>{m.yearly_payout}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
     );
   }
@@ -87,9 +99,7 @@ class ReportsPage extends Component {
             <select id="selectedGroupId" value={selectedGroupId} onChange={this.handleChange}>
               <option value="">Select a group</option>
               {groups.map((group) => (
-                <option key={group.id} value={group.id}>
-                  {group.name}
-                </option>
+                <option key={group.id} value={group.id}>{group.name}</option>
               ))}
             </select>
             <button type="submit">Generate Report</button>
