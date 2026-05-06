@@ -6,13 +6,11 @@
   },
   "description": "Backend for Motshelo Group Management System",
   "main": "server.js",
- 
-
-"scripts": {
-  "start": "node server.js",
-  "build": "npm rebuild sqlite3",
-  "postinstall": "npm run build"
-},
+  "scripts": {
+    "start": "node server.js",
+    "build": "npm rebuild sqlite3",
+    "postinstall": "npm run build"
+  },
   "dependencies": {
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
@@ -24,8 +22,7 @@
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",
     "multer": "^1.4.5-lts.1",
-    "sqlite": "^5.1.1",
-    "sqlite3": "^6.0.1"
+    "pg": "^8.20.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"
