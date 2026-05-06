@@ -1,8 +1,14 @@
 import apiClient from "./ApiClient";
 
 class GroupService {
+  // Returns only groups the user belongs to
   getGroups() {
     return apiClient.get("/groups");
+  }
+
+  // Returns ALL groups in the system (for member enrollment dropdown)
+  getAllGroups() {
+    return apiClient.get("/groups/all");
   }
 
   getGroupById(groupId) {
