@@ -12,11 +12,13 @@ const authenticateToken = async (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'development-only-secret');
-    const db = getDb();
-    const user = await db.get(
-      'SELECT id, email, full_name, role, is_signatory, group_id FROM users WHERE id = ?',
+    const pool = getDb();
+
+    const result = await pool.query(
+      'SELECT id, email, full_name, role, is_signatory, group_id FROM users WHERE id = $1',
       [decoded.userId]
     );
+    const user = result.rows[0];
 
     if (!user) {
       return res.status(401).json({ error: 'User not found' });
@@ -51,24 +53,22 @@ const requireAdmin = async (req, res, next) => {
 
 const requireGroupAccess = async (req, res, next) => {
   const groupId = parseInt(req.params.groupId) || parseInt(req.body.group_id);
-  
+
   if (!groupId) {
     return res.status(400).json({ error: 'Group ID required' });
   }
 
-  const db = getDb();
-  
-  // Check if user belongs to the group or is admin
   if (req.user.role === 'admin') {
     return next();
   }
 
-  const membership = await db.get(
-    'SELECT id FROM group_members WHERE group_id = ? AND user_id = ?',
+  const pool = getDb();
+  const membership = await pool.query(
+    'SELECT id FROM group_members WHERE group_id = $1 AND user_id = $2',
     [groupId, req.user.id]
   );
 
-  if (!membership && req.user.group_id !== groupId) {
+  if (membership.rows.length === 0 && req.user.group_id !== groupId) {
     return res.status(403).json({ error: 'Access denied to this group' });
   }
 
