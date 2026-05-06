@@ -7,9 +7,7 @@
   "description": "Backend for Motshelo Group Management System",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "build": "npm rebuild sqlite3",
-    "postinstall": "npm run build"
+    "start": "node server.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
