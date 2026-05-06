@@ -18,6 +18,10 @@ class LoanService {
     return apiClient.put(`/loans/${groupId}/loans/${loanId}/approve`);
   }
 
+  rejectLoan(groupId, loanId, reason) {
+    return apiClient.put(`/loans/${groupId}/loans/${loanId}/reject`, { reason });
+  }
+
   disburseLoan(groupId, loanId) {
     return apiClient.put(`/loans/${groupId}/loans/${loanId}/disburse`);
   }

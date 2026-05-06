@@ -69,6 +69,30 @@ class LoanPage extends Component {
     }));
   };
 
+  handleApproveLoan = async (loanId) => {
+    const groupId = this.getGroupId();
+    try {
+      const result = await loanService.approveLoan(groupId, loanId);
+      this.setState({ success: result.message || "Loan approved.", formError: "" });
+      this.loadLoans();
+    } catch (error) {
+      this.setState({ formError: error.message || "Failed to approve loan.", success: "" });
+    }
+  };
+
+  handleRejectLoan = async (loanId) => {
+    const reason = window.prompt("Enter rejection reason (optional):");
+    if (reason === null) return;
+    const groupId = this.getGroupId();
+    try {
+      await loanService.rejectLoan(groupId, loanId, reason);
+      this.setState({ success: "Loan rejected.", formError: "" });
+      this.loadLoans();
+    } catch (error) {
+      this.setState({ formError: error.message || "Failed to reject loan.", success: "" });
+    }
+  };
+
   handleSubmit = async (event) => {
     event.preventDefault();
     const errors = validateRequired(["memberId", "amount", "reason", "requestedDate"], this.state.form);
@@ -101,6 +125,7 @@ class LoanPage extends Component {
 
   render() {
     const { members, loans, form, errors, loading, formError, success } = this.state;
+    const isSignatory = this.context.user?.is_signatory;
 
     return (
       <section>
@@ -144,18 +169,61 @@ class LoanPage extends Component {
             ) : (
               <table>
                 <thead>
-                  <tr><th>Member</th><th>Amount (BWP)</th><th>Balance</th><th>Status</th></tr>
+                  <tr>
+                    <th>Member</th>
+                    <th>Amount (BWP)</th>
+                    <th>Balance</th>
+                    <th>Status</th>
+                    <th>Approvals</th>
+                    {isSignatory && <th>Action</th>}
+                  </tr>
                 </thead>
                 <tbody>
                   {loans.length === 0 ? (
-                    <tr><td colSpan="4">No loans found.</td></tr>
+                    <tr><td colSpan={isSignatory ? 6 : 5}>No loans found.</td></tr>
                   ) : (
                     loans.map((loan) => (
                       <tr key={loan.id}>
                         <td>{loan.full_name || loan.member_name}</td>
                         <td>{parseFloat(loan.principal_amount).toFixed(2)}</td>
                         <td>{parseFloat(loan.balance || loan.principal_amount).toFixed(2)}</td>
-                        <td>{loan.status || "Pending"}</td>
+                        <td>{loan.status || "pending"}</td>
+                        <td>
+                          {loan.status === "approved"
+                            ? "✅ All approved"
+                            : loan.status === "pending"
+                            ? `${loan.approval_count ?? 0}/${loan.total_signatories ?? "?"}`
+                            : "—"}
+                        </td>
+                        {isSignatory && (
+                          <td>
+                            {loan.status === "pending" && !loan.has_approved && (
+                              <>
+                                <button
+                                  onClick={() => this.handleApproveLoan(loan.id)}
+                                  style={{ marginRight: "6px" }}
+                                >
+                                  Approve
+                                </button>
+                                <button
+                                  onClick={() => this.handleRejectLoan(loan.id)}
+                                  style={{ color: "red" }}
+                                >
+                                  Reject
+                                </button>
+                              </>
+                            )}
+                            {loan.status === "pending" && loan.has_approved && (
+                              <span style={{ color: "orange" }}>⏳ Waiting for others</span>
+                            )}
+                            {loan.status === "rejected" && (
+                              <span style={{ color: "red" }}>❌ Rejected</span>
+                            )}
+                            {loan.status === "approved" && (
+                              <span style={{ color: "green" }}>✅ Approved</span>
+                            )}
+                          </td>
+                        )}
                       </tr>
                     ))
                   )}

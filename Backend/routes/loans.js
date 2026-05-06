@@ -20,6 +20,7 @@ router.post('/:groupId/loans', authenticateToken, createLoanValidation, loanCont
 router.get('/:groupId/loans', authenticateToken, requireGroupAccess, loanController.getGroupLoans);
 router.get('/:groupId/loans/pending', authenticateToken, requireSignatory, loanController.getPendingLoans);
 router.put('/:groupId/loans/:loanId/approve', authenticateToken, requireSignatory, loanController.approveLoan);
+router.put('/:groupId/loans/:loanId/reject', authenticateToken, requireSignatory, loanController.rejectLoan);
 router.put('/:groupId/loans/:loanId/disburse', authenticateToken, requireSignatory, loanController.disburseLoan);
 router.post('/:groupId/loans/:loanId/payments', authenticateToken, upload.single('proof'), paymentValidation, loanController.makeLoanPayment);
 router.get('/:groupId/loans/:loanId/payments', authenticateToken, requireGroupAccess, loanController.getLoanPayments);

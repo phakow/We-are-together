@@ -33,20 +33,29 @@ exports.getGroupLoans = async (req, res) => {
     const pool = getDb();
     const groupId = req.params.groupId;
     const { status } = req.query;
+    const userId = req.user.id;
 
     let query = `
       SELECT l.*, u.full_name as member_name, gm.member_number,
-             s1.full_name as signatory1_name, s2.full_name as signatory2_name
+             s1.full_name as signatory1_name, s2.full_name as signatory2_name,
+             COUNT(la.id) as approval_count,
+             total_sigs.total as total_signatories,
+             BOOL_OR(la.signatory_id = $2) as has_approved
       FROM loans l
       JOIN users u ON l.member_id = u.id
       LEFT JOIN group_members gm ON u.id = gm.user_id AND gm.group_id = l.group_id
       LEFT JOIN users s1 ON l.approved_by_signatory1 = s1.id
       LEFT JOIN users s2 ON l.approved_by_signatory2 = s2.id
+      LEFT JOIN loan_approvals la ON la.loan_id = l.id
+      CROSS JOIN (
+        SELECT COUNT(*) as total FROM users
+        WHERE group_id = $1 AND is_signatory = true
+      ) total_sigs
       WHERE l.group_id = $1
     `;
-    const params = [groupId];
-    if (status) { query += ` AND l.status = $2`; params.push(status); }
-    query += ` ORDER BY l.application_date DESC`;
+    const params = [groupId, userId];
+    if (status) { query += ` AND l.status = $3`; params.push(status); }
+    query += ` GROUP BY l.id, u.full_name, gm.member_number, s1.full_name, s2.full_name, total_sigs.total ORDER BY l.application_date DESC`;
 
     const result = await pool.query(query, params);
     res.json(result.rows);
@@ -85,19 +94,79 @@ exports.approveLoan = async (req, res) => {
     if (!loan) return res.status(404).json({ error: 'Loan not found' });
     if (loan.status !== 'pending') return res.status(400).json({ error: 'Loan already processed' });
 
-    if (!loan.approved_by_signatory1) {
-      await pool.query('UPDATE loans SET approved_by_signatory1 = $1 WHERE id = $2', [req.user.id, loanId]);
-      res.json({ message: 'First approval completed. Waiting for second signatory.' });
-    } else {
+    // Check this signatory hasn't already approved
+    const alreadyApproved = await pool.query(
+      'SELECT id FROM loan_approvals WHERE loan_id = $1 AND signatory_id = $2',
+      [loanId, req.user.id]
+    );
+    if (alreadyApproved.rows.length > 0) {
+      return res.status(400).json({ error: 'You have already approved this loan' });
+    }
+
+    // Record this signatory's approval
+    await pool.query(
+      'INSERT INTO loan_approvals (loan_id, signatory_id) VALUES ($1, $2)',
+      [loanId, req.user.id]
+    );
+
+    // Count approvals vs total signatories
+    const approvedResult = await pool.query(
+      'SELECT COUNT(*) as approved FROM loan_approvals WHERE loan_id = $1',
+      [loanId]
+    );
+    const approved = parseInt(approvedResult.rows[0].approved);
+
+    const totalResult = await pool.query(
+      'SELECT COUNT(*) as total FROM users WHERE group_id = $1 AND is_signatory = true',
+      [groupId]
+    );
+    const total = parseInt(totalResult.rows[0].total);
+
+    if (approved >= total) {
       await pool.query(
-        `UPDATE loans SET approved_by_signatory2 = $1, approval_date = CURRENT_DATE, status = 'approved' WHERE id = $2`,
+        `UPDATE loans SET status = 'approved', approved_by_signatory1 = $1, approval_date = CURRENT_DATE WHERE id = $2`,
         [req.user.id, loanId]
       );
-      res.json({ message: 'Loan fully approved and ready for disbursement' });
+      return res.json({
+        message: 'Loan fully approved by all signatories',
+        approved,
+        total,
+        fullyApproved: true
+      });
     }
+
+    res.json({
+      message: `Approved by ${approved} of ${total} signatories`,
+      approved,
+      total,
+      fullyApproved: false
+    });
   } catch (error) {
     console.error('Approve loan error:', error);
     res.status(500).json({ error: 'Error approving loan' });
+  }
+};
+
+exports.rejectLoan = async (req, res) => {
+  try {
+    const pool = getDb();
+    const { loanId, groupId } = req.params;
+    const { reason } = req.body;
+
+    const check = await pool.query('SELECT * FROM loans WHERE id = $1 AND group_id = $2', [loanId, groupId]);
+    const loan = check.rows[0];
+    if (!loan) return res.status(404).json({ error: 'Loan not found' });
+    if (loan.status !== 'pending') return res.status(400).json({ error: 'Loan already processed' });
+
+    await pool.query(
+      `UPDATE loans SET status = 'rejected', notes = $1 WHERE id = $2`,
+      [reason || 'Rejected by signatory', loanId]
+    );
+
+    res.json({ message: 'Loan rejected' });
+  } catch (error) {
+    console.error('Reject loan error:', error);
+    res.status(500).json({ error: 'Error rejecting loan' });
   }
 };
 
