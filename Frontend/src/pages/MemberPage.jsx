@@ -1,7 +1,6 @@
 import React, { Component } from "react";
 import FormMessage from "../components/common/FormMessage";
 import { AuthContext } from "../context/AuthContext";
-import groupService from "../services/groupService";
 import memberService from "../services/memberService";
 import { hasErrors, validateEmail, validateRequired } from "../utils/validators";
 
@@ -9,13 +8,12 @@ class MemberPage extends Component {
   static contextType = AuthContext;
 
   state = {
-    groups: [],
     members: [],
     form: {
       fullName: "",
       email: "",
       phoneNumber: "",
-      groupId: ""
+      isSignatory: false
     },
     errors: {},
     loading: true,
@@ -24,33 +22,15 @@ class MemberPage extends Component {
   };
 
   async componentDidMount() {
-    await Promise.all([this.loadGroups(), this.loadMembers()]);
+    await this.loadMembers();
   }
 
   getGroupId() {
-    const { user } = this.context;
-    return this.state.form.groupId || user?.group_id;
+    return this.context.user?.group_id;
   }
 
-  loadGroups = async () => {
-    try {
-      const groups = await groupService.getGroups();
-      const { user } = this.context;
-      this.setState((current) => ({
-        groups: groups || [],
-        form: {
-          ...current.form,
-          groupId: current.form.groupId || user?.group_id || groups?.[0]?.id || ""
-        }
-      }));
-    } catch (error) {
-      this.setState({ formError: "Groups could not be loaded." });
-    }
-  };
-
   loadMembers = async () => {
-    const { user } = this.context;
-    const groupId = user?.group_id;
+    const groupId = this.getGroupId();
     if (!groupId) {
       this.setState({ loading: false });
       return;
@@ -59,20 +39,20 @@ class MemberPage extends Component {
       const members = await memberService.getMembers(groupId);
       this.setState({ members: members || [], loading: false });
     } catch (error) {
-      this.setState({ loading: false, formError: "Unable to load members yet." });
+      this.setState({ loading: false, formError: "Unable to load members." });
     }
   };
 
   handleChange = (event) => {
-    const { name, value } = event.target;
+    const { name, value, type, checked } = event.target;
     this.setState((current) => ({
-      form: { ...current.form, [name]: value }
+      form: { ...current.form, [name]: type === "checkbox" ? checked : value }
     }));
   };
 
   handleSubmit = async (event) => {
     event.preventDefault();
-    const errors = validateRequired(["fullName", "email", "groupId"], this.state.form);
+    const errors = validateRequired(["fullName", "email"], this.state.form);
     const emailError = validateEmail(this.state.form.email);
     if (emailError) errors.email = emailError;
 
@@ -81,18 +61,23 @@ class MemberPage extends Component {
       return;
     }
 
+    const groupId = this.getGroupId();
+    if (!groupId) {
+      this.setState({ formError: "No group found. Please ensure you are assigned to a group." });
+      return;
+    }
+
     try {
-      const groupId = this.state.form.groupId;
       await memberService.createMember(groupId, {
         full_name: this.state.form.fullName,
         email: this.state.form.email,
-        phone_number: this.state.form.phoneNumber
+        is_signatory: this.state.form.isSignatory
       });
       this.setState({
-        form: { fullName: "", email: "", phoneNumber: "", groupId: this.state.form.groupId },
+        form: { fullName: "", email: "", phoneNumber: "", isSignatory: false },
         errors: {},
         formError: "",
-        success: "Member enrolled successfully."
+        success: "Member enrolled successfully. They can log in with their email and the default password Member@123."
       });
       this.loadMembers();
     } catch (error) {
@@ -101,60 +86,65 @@ class MemberPage extends Component {
   };
 
   render() {
-    const { groups, members, form, errors, loading, formError, success } = this.state;
+    const { members, form, errors, loading, formError, success } = this.state;
+    const { user } = this.context;
+    const isSignatory = user?.is_signatory || user?.role === 'admin';
 
     return (
       <section>
         <h2>Members</h2>
-        <p>Enroll members into a registered motshelo group.</p>
+        <p>Enroll and manage members of your motshelo group.</p>
 
         <div className="two-column">
-          <div>
-            <h3>Enroll Member</h3>
-            <form onSubmit={this.handleSubmit} noValidate>
-              <label htmlFor="fullName">Full Name</label>
-              <input id="fullName" name="fullName" value={form.fullName} onChange={this.handleChange} />
-              {errors.fullName && <small>{errors.fullName}</small>}
+          {isSignatory && (
+            <div>
+              <h3>Enroll Member</h3>
+              <form onSubmit={this.handleSubmit} noValidate>
+                <label htmlFor="fullName">Full Name</label>
+                <input id="fullName" name="fullName" value={form.fullName} onChange={this.handleChange} />
+                {errors.fullName && <small>{errors.fullName}</small>}
 
-              <label htmlFor="email">Email</label>
-              <input id="email" name="email" type="email" value={form.email} onChange={this.handleChange} />
-              {errors.email && <small>{errors.email}</small>}
+                <label htmlFor="email">Email</label>
+                <input id="email" name="email" type="email" value={form.email} onChange={this.handleChange} />
+                {errors.email && <small>{errors.email}</small>}
 
-              <label htmlFor="phoneNumber">Phone Number</label>
-              <input id="phoneNumber" name="phoneNumber" value={form.phoneNumber} onChange={this.handleChange} />
+                <label>
+                  <input
+                    type="checkbox"
+                    name="isSignatory"
+                    checked={form.isSignatory}
+                    onChange={this.handleChange}
+                    style={{ marginRight: "8px" }}
+                  />
+                  Make this member a signatory (approver)
+                </label>
 
-              <label htmlFor="groupId">Group</label>
-              <select id="groupId" name="groupId" value={form.groupId} onChange={this.handleChange}>
-                <option value="">Select a group</option>
-                {groups.map((group) => (
-                  <option key={group.id} value={group.id}>{group.name}</option>
-                ))}
-              </select>
-              {errors.groupId && <small>{errors.groupId}</small>}
-
-              <button type="submit">Add Member</button>
-            </form>
-            <FormMessage error={formError} success={success} />
-          </div>
+                <button type="submit" style={{ marginTop: "12px" }}>Add Member</button>
+              </form>
+              <FormMessage error={formError} success={success} />
+            </div>
+          )}
 
           <div>
             <h3>Member List</h3>
+            {!isSignatory && formError && <p style={{ color: "red" }}>{formError}</p>}
             {loading ? (
               <p>Loading members...</p>
             ) : (
               <table>
                 <thead>
-                  <tr><th>Name</th><th>Email</th><th>Group</th></tr>
+                  <tr><th>Name</th><th>Email</th><th>Signatory</th><th>Status</th></tr>
                 </thead>
                 <tbody>
                   {members.length === 0 ? (
-                    <tr><td colSpan="3">No members found.</td></tr>
+                    <tr><td colSpan="4">No members found.</td></tr>
                   ) : (
                     members.map((member) => (
                       <tr key={member.id}>
                         <td>{member.full_name}</td>
                         <td>{member.email}</td>
-                        <td>{member.group_name || member.group_id}</td>
+                        <td>{member.is_signatory ? "✓ Yes" : "No"}</td>
+                        <td>{member.status || "active"}</td>
                       </tr>
                     ))
                   )}

@@ -83,8 +83,9 @@ class LoanPage extends Component {
     const groupId = this.getGroupId();
     try {
       await loanService.applyForLoan(groupId, {
-        principal_amount: this.state.form.amount,
-        notes: this.state.form.reason
+        principal_amount: parseFloat(this.state.form.amount),
+        notes: this.state.form.reason,
+        member_id: this.state.form.memberId
       });
       this.setState({
         form: { ...this.state.form, amount: "", reason: "", requestedDate: "" },
@@ -119,8 +120,8 @@ class LoanPage extends Component {
               </select>
               {errors.memberId && <small>{errors.memberId}</small>}
 
-              <label htmlFor="amount">Loan Amount</label>
-              <input id="amount" name="amount" type="number" value={form.amount} onChange={this.handleChange} />
+              <label htmlFor="amount">Loan Amount (BWP)</label>
+              <input id="amount" name="amount" type="number" min="1" value={form.amount} onChange={this.handleChange} />
               {errors.amount && <small>{errors.amount}</small>}
 
               <label htmlFor="reason">Reason</label>
@@ -143,16 +144,17 @@ class LoanPage extends Component {
             ) : (
               <table>
                 <thead>
-                  <tr><th>Member</th><th>Amount</th><th>Status</th></tr>
+                  <tr><th>Member</th><th>Amount (BWP)</th><th>Balance</th><th>Status</th></tr>
                 </thead>
                 <tbody>
                   {loans.length === 0 ? (
-                    <tr><td colSpan="3">No loans found.</td></tr>
+                    <tr><td colSpan="4">No loans found.</td></tr>
                   ) : (
                     loans.map((loan) => (
                       <tr key={loan.id}>
-                        <td>{loan.member_name}</td>
-                        <td>{loan.principal_amount}</td>
+                        <td>{loan.full_name || loan.member_name}</td>
+                        <td>{parseFloat(loan.principal_amount).toFixed(2)}</td>
+                        <td>{parseFloat(loan.balance || loan.principal_amount).toFixed(2)}</td>
                         <td>{loan.status || "Pending"}</td>
                       </tr>
                     ))

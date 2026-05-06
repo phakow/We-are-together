@@ -7,23 +7,15 @@ exports.applyForLoan = async (req, res) => {
 
   try {
     const pool = getDb();
-    const { principal_amount, notes } = req.body;
+    const { principal_amount, notes, member_id } = req.body;
     const groupId = req.params.groupId;
-    const memberId = req.user.id;
-
-    const contrib = await pool.query(
-      `SELECT COALESCE(SUM(amount),0) as total FROM contributions WHERE member_id = $1 AND group_id = $2 AND status = 'approved'`,
-      [memberId, groupId]
-    );
-
-    if (parseFloat(contrib.rows[0].total) < principal_amount * 0.5) {
-      return res.status(400).json({ error: 'Loan amount too high relative to contributions' });
-    }
+    // Use provided member_id or fall back to the logged-in user
+    const targetMemberId = member_id || req.user.id;
 
     const result = await pool.query(
       `INSERT INTO loans (group_id, member_id, principal_amount, balance, interest_rate, notes, status)
        VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
-      [groupId, memberId, principal_amount, principal_amount, 20, notes || null, 'pending']
+      [groupId, targetMemberId, principal_amount, principal_amount, 20, notes || null, 'pending']
     );
 
     res.status(201).json({
@@ -47,7 +39,7 @@ exports.getGroupLoans = async (req, res) => {
              s1.full_name as signatory1_name, s2.full_name as signatory2_name
       FROM loans l
       JOIN users u ON l.member_id = u.id
-      JOIN group_members gm ON u.id = gm.user_id
+      LEFT JOIN group_members gm ON u.id = gm.user_id AND gm.group_id = l.group_id
       LEFT JOIN users s1 ON l.approved_by_signatory1 = s1.id
       LEFT JOIN users s2 ON l.approved_by_signatory2 = s2.id
       WHERE l.group_id = $1
@@ -71,7 +63,7 @@ exports.getPendingLoans = async (req, res) => {
       `SELECT l.*, u.full_name as member_name, gm.member_number
        FROM loans l
        JOIN users u ON l.member_id = u.id
-       JOIN group_members gm ON u.id = gm.user_id
+       LEFT JOIN group_members gm ON u.id = gm.user_id AND gm.group_id = l.group_id
        WHERE l.group_id = $1 AND l.status = 'pending'
        ORDER BY l.application_date ASC`,
       [req.params.groupId]

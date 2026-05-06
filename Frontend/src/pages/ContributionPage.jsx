@@ -15,8 +15,7 @@ class ContributionPage extends Component {
       memberId: "",
       amount: "1000",
       paymentMonth: "",
-      paymentDate: "",
-      proofOfPaymentUrl: ""
+      paymentDate: ""
     },
     errors: {},
     loading: true,
@@ -83,18 +82,18 @@ class ContributionPage extends Component {
 
     const groupId = this.getGroupId();
     try {
+      const [year, month] = this.state.form.paymentMonth.split("-");
       await contributionService.createContribution(groupId, {
-        amount: this.state.form.amount,
+        amount: parseFloat(this.state.form.amount),
         payment_date: this.state.form.paymentDate,
-        month: new Date(this.state.form.paymentMonth).getMonth() + 1,
-        year: new Date(this.state.form.paymentMonth).getFullYear(),
-        proof_of_payment: this.state.form.proofOfPaymentUrl
+        month: parseInt(month),
+        year: parseInt(year)
       });
       this.setState({
-        form: { ...this.state.form, amount: "1000", paymentMonth: "", paymentDate: "", proofOfPaymentUrl: "" },
+        form: { ...this.state.form, amount: "1000", paymentMonth: "", paymentDate: "" },
         errors: {},
         formError: "",
-        success: "Contribution submitted. It can be marked approved by signatories."
+        success: "Contribution submitted. Awaiting signatory approval."
       });
       this.loadContributionData();
     } catch (error) {
@@ -108,7 +107,7 @@ class ContributionPage extends Component {
     return (
       <section>
         <h2>Contributions</h2>
-        <p>Record monthly contributions and track approved balances per member.</p>
+        <p>Record monthly contributions (P1000 per member) and track approval status.</p>
 
         <div className="two-column">
           <div>
@@ -123,8 +122,8 @@ class ContributionPage extends Component {
               </select>
               {errors.memberId && <small>{errors.memberId}</small>}
 
-              <label htmlFor="amount">Amount</label>
-              <input id="amount" name="amount" type="number" value={form.amount} onChange={this.handleChange} />
+              <label htmlFor="amount">Amount (BWP)</label>
+              <input id="amount" name="amount" type="number" min="1" value={form.amount} onChange={this.handleChange} />
               {errors.amount && <small>{errors.amount}</small>}
 
               <label htmlFor="paymentMonth">Payment Month</label>
@@ -134,9 +133,6 @@ class ContributionPage extends Component {
               <label htmlFor="paymentDate">Payment Date</label>
               <input id="paymentDate" name="paymentDate" type="date" value={form.paymentDate} onChange={this.handleChange} />
               {errors.paymentDate && <small>{errors.paymentDate}</small>}
-
-              <label htmlFor="proofOfPaymentUrl">Proof of Payment URL</label>
-              <input id="proofOfPaymentUrl" name="proofOfPaymentUrl" value={form.proofOfPaymentUrl} onChange={this.handleChange} />
 
               <button type="submit">Submit Contribution</button>
             </form>
@@ -148,17 +144,25 @@ class ContributionPage extends Component {
             {loading ? (
               <p>Loading contributions...</p>
             ) : (
-              <ul>
-                {contributions.length === 0 ? (
-                  <li>No contributions recorded.</li>
-                ) : (
-                  contributions.slice(0, 5).map((item) => (
-                    <li key={item.id}>
-                      {item.member_name} paid {item.amount} — {item.month}/{item.year} ({item.status})
-                    </li>
-                  ))
-                )}
-              </ul>
+              <table>
+                <thead>
+                  <tr><th>Member</th><th>Amount</th><th>Month/Year</th><th>Status</th></tr>
+                </thead>
+                <tbody>
+                  {contributions.length === 0 ? (
+                    <tr><td colSpan="4">No contributions recorded.</td></tr>
+                  ) : (
+                    contributions.slice(0, 10).map((item) => (
+                      <tr key={item.id}>
+                        <td>{item.member_name || item.full_name}</td>
+                        <td>P{parseFloat(item.amount).toFixed(2)}</td>
+                        <td>{item.month}/{item.year}</td>
+                        <td>{item.status}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             )}
           </div>
         </div>
