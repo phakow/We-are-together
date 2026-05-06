@@ -1,16 +1,28 @@
 import apiClient from "./ApiClient";
 
 class ContributionService {
-  getContributions() {
-    return apiClient.get("/contributions");
+  getContributions(groupId) {
+    return apiClient.get(`/contributions/${groupId}/contributions`);
   }
 
-  createContribution(payload) {
-    return apiClient.post("/contributions", payload);
+  getPendingContributions(groupId) {
+    return apiClient.get(`/contributions/${groupId}/contributions/pending`);
   }
 
-  getBalances() {
-    return apiClient.get("/balances");
+  createContribution(groupId, payload) {
+    return apiClient.post(`/contributions/${groupId}/contributions`, payload);
+  }
+
+  approveContribution(groupId, contributionId) {
+    return apiClient.put(`/contributions/${groupId}/contributions/${contributionId}/approve`);
+  }
+
+  rejectContribution(groupId, contributionId, reason) {
+    return apiClient.put(`/contributions/${groupId}/contributions/${contributionId}/reject`, { reason });
+  }
+
+  getContributionSummary(groupId) {
+    return apiClient.get(`/contributions/${groupId}/contributions/summary`);
   }
 }
 

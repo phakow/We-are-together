@@ -1,16 +1,37 @@
 import apiClient from "./ApiClient";
 
 class LoanService {
-  getLoans() {
-    return apiClient.get("/loans");
+  getLoans(groupId, status = null) {
+    const query = status ? `?status=${status}` : "";
+    return apiClient.get(`/loans/${groupId}/loans${query}`);
   }
 
-  createLoan(payload) {
-    return apiClient.post("/loans", payload);
+  getPendingLoans(groupId) {
+    return apiClient.get(`/loans/${groupId}/loans/pending`);
   }
 
-  approveLoan(loanId, payload) {
-    return apiClient.put(`/loans/${loanId}/approval`, payload);
+  applyForLoan(groupId, payload) {
+    return apiClient.post(`/loans/${groupId}/loans`, payload);
+  }
+
+  approveLoan(groupId, loanId) {
+    return apiClient.put(`/loans/${groupId}/loans/${loanId}/approve`);
+  }
+
+  disburseLoan(groupId, loanId) {
+    return apiClient.put(`/loans/${groupId}/loans/${loanId}/disburse`);
+  }
+
+  makeLoanPayment(groupId, loanId, payload) {
+    return apiClient.post(`/loans/${groupId}/loans/${loanId}/payments`, payload);
+  }
+
+  getLoanPayments(groupId, loanId) {
+    return apiClient.get(`/loans/${groupId}/loans/${loanId}/payments`);
+  }
+
+  approveLoanPayment(groupId, paymentId) {
+    return apiClient.put(`/loans/${groupId}/payments/${paymentId}/approve`);
   }
 }
 
