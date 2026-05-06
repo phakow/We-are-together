@@ -101,8 +101,33 @@ class ContributionPage extends Component {
     }
   };
 
+  handleApprove = async (contributionId) => {
+    const groupId = this.getGroupId();
+    try {
+      const result = await contributionService.approveContribution(groupId, contributionId);
+      this.setState({ success: result.message, formError: "" });
+      this.loadContributionData();
+    } catch (error) {
+      this.setState({ formError: error.message || "Failed to approve contribution.", success: "" });
+    }
+  };
+
+  handleReject = async (contributionId) => {
+    const reason = window.prompt("Enter rejection reason (optional):");
+    if (reason === null) return;
+    const groupId = this.getGroupId();
+    try {
+      await contributionService.rejectContribution(groupId, contributionId, reason);
+      this.setState({ success: "Contribution rejected.", formError: "" });
+      this.loadContributionData();
+    } catch (error) {
+      this.setState({ formError: error.message || "Failed to reject contribution.", success: "" });
+    }
+  };
+
   render() {
     const { members, contributions, form, errors, loading, formError, success } = this.state;
+    const isSignatory = this.context.user?.is_signatory;
 
     return (
       <section>
@@ -146,11 +171,18 @@ class ContributionPage extends Component {
             ) : (
               <table>
                 <thead>
-                  <tr><th>Member</th><th>Amount</th><th>Month/Year</th><th>Status</th></tr>
+                  <tr>
+                    <th>Member</th>
+                    <th>Amount</th>
+                    <th>Month/Year</th>
+                    <th>Status</th>
+                    <th>Approvals</th>
+                    {isSignatory && <th>Action</th>}
+                  </tr>
                 </thead>
                 <tbody>
                   {contributions.length === 0 ? (
-                    <tr><td colSpan="4">No contributions recorded.</td></tr>
+                    <tr><td colSpan={isSignatory ? 6 : 5}>No contributions recorded.</td></tr>
                   ) : (
                     contributions.slice(0, 10).map((item) => (
                       <tr key={item.id}>
@@ -158,6 +190,37 @@ class ContributionPage extends Component {
                         <td>P{parseFloat(item.amount).toFixed(2)}</td>
                         <td>{item.month}/{item.year}</td>
                         <td>{item.status}</td>
+                        <td>
+                          {item.status === "approved"
+                            ? "✅ All approved"
+                            : `${item.approval_count ?? 0}/${item.total_signatories ?? "?"}`}
+                        </td>
+                        {isSignatory && (
+                          <td>
+                            {item.status === "pending" && !item.has_approved && (
+                              <>
+                                <button
+                                  onClick={() => this.handleApprove(item.id)}
+                                  style={{ marginRight: "6px" }}
+                                >
+                                  Approve
+                                </button>
+                                <button
+                                  onClick={() => this.handleReject(item.id)}
+                                  style={{ color: "red" }}
+                                >
+                                  Reject
+                                </button>
+                              </>
+                            )}
+                            {item.status === "pending" && item.has_approved && (
+                              <span style={{ color: "orange" }}>⏳ Waiting for others</span>
+                            )}
+                            {item.status === "rejected" && (
+                              <span style={{ color: "red" }}>❌ Rejected</span>
+                            )}
+                          </td>
+                        )}
                       </tr>
                     ))
                   )}

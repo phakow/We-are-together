@@ -38,22 +38,31 @@ exports.getGroupContributions = async (req, res) => {
     const groupId = req.params.groupId;
     const { month, year, status } = req.query;
 
+    const userId = req.user.id;
     let query = `
       SELECT c.*, u.full_name as member_name, gm.member_number,
-             a.full_name as approved_by_name
+             a.full_name as approved_by_name,
+             COUNT(ca.id) as approval_count,
+             total_sigs.total as total_signatories,
+             BOOL_OR(ca.signatory_id = $2) as has_approved
       FROM contributions c
       JOIN users u ON c.member_id = u.id
-      JOIN group_members gm ON u.id = gm.user_id
+      JOIN group_members gm ON u.id = gm.user_id AND gm.group_id = c.group_id
       LEFT JOIN users a ON c.approved_by = a.id
+      LEFT JOIN contribution_approvals ca ON ca.contribution_id = c.id
+      CROSS JOIN (
+        SELECT COUNT(*) as total FROM users
+        WHERE group_id = $1 AND is_signatory = true
+      ) total_sigs
       WHERE c.group_id = $1
     `;
-    const params = [groupId];
-    let i = 2;
+    const params = [groupId, userId];
+    let i = 3;
 
     if (month) { query += ` AND c.month = $${i++}`; params.push(month); }
     if (year)  { query += ` AND c.year = $${i++}`;  params.push(year); }
     if (status){ query += ` AND c.status = $${i++}`;params.push(status); }
-    query += ` ORDER BY c.created_at DESC`;
+    query += ` GROUP BY c.id, u.full_name, gm.member_number, a.full_name, total_sigs.total ORDER BY c.created_at DESC`;
 
     const result = await pool.query(query, params);
     res.json(result.rows);
@@ -87,6 +96,7 @@ exports.approveContribution = async (req, res) => {
     const pool = getDb();
     const { contributionId, groupId } = req.params;
 
+    // Check contribution exists and is pending
     const check = await pool.query(
       'SELECT * FROM contributions WHERE id = $1 AND group_id = $2',
       [contributionId, groupId]
@@ -95,18 +105,63 @@ exports.approveContribution = async (req, res) => {
     if (!contribution) return res.status(404).json({ error: 'Contribution not found' });
     if (contribution.status !== 'pending') return res.status(400).json({ error: 'Contribution already processed' });
 
+    // Check this signatory hasn't already approved
+    const alreadyApproved = await pool.query(
+      'SELECT id FROM contribution_approvals WHERE contribution_id = $1 AND signatory_id = $2',
+      [contributionId, req.user.id]
+    );
+    if (alreadyApproved.rows.length > 0) {
+      return res.status(400).json({ error: 'You have already approved this contribution' });
+    }
+
+    // Record this signatory's approval
     await pool.query(
-      `UPDATE contributions SET status = 'approved', approved_by = $1, approved_at = CURRENT_TIMESTAMP WHERE id = $2`,
-      [req.user.id, contributionId]
+      'INSERT INTO contribution_approvals (contribution_id, signatory_id) VALUES ($1, $2)',
+      [contributionId, req.user.id]
     );
 
-    await pool.query(
-      `UPDATE group_members SET total_contributions = total_contributions + $1
-       WHERE group_id = $2 AND user_id = $3`,
-      [contribution.amount, groupId, contribution.member_id]
+    // Count how many signatories have approved so far
+    const approvedResult = await pool.query(
+      'SELECT COUNT(*) as approved FROM contribution_approvals WHERE contribution_id = $1',
+      [contributionId]
     );
+    const approved = parseInt(approvedResult.rows[0].approved);
 
-    res.json({ message: 'Contribution approved successfully' });
+    // Count total active signatories in the group
+    const totalResult = await pool.query(
+      `SELECT COUNT(*) as total FROM users 
+       WHERE group_id = $1 AND is_signatory = true`,
+      [groupId]
+    );
+    const total = parseInt(totalResult.rows[0].total);
+
+    // If all signatories have approved, mark as fully approved
+    if (approved >= total) {
+      await pool.query(
+        `UPDATE contributions SET status = 'approved', approved_by = $1, approved_at = CURRENT_TIMESTAMP WHERE id = $2`,
+        [req.user.id, contributionId]
+      );
+
+      await pool.query(
+        `UPDATE group_members SET total_contributions = total_contributions + $1
+         WHERE group_id = $2 AND user_id = $3`,
+        [contribution.amount, groupId, contribution.member_id]
+      );
+
+      return res.json({ 
+        message: 'Contribution fully approved by all signatories',
+        approved,
+        total,
+        fullyApproved: true
+      });
+    }
+
+    res.json({ 
+      message: `Approved by ${approved} of ${total} signatories`,
+      approved,
+      total,
+      fullyApproved: false
+    });
   } catch (error) {
     console.error('Approve contribution error:', error);
     res.status(500).json({ error: 'Error approving contribution' });
